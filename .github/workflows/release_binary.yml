@@ -1,0 +1,54 @@
+name: Release Go Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Git Tag Name'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/cctui-linux-amd64 .
+          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/cctui-linux-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/cctui-darwin-amd64 .
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/cctui-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/cctui-windows-amd64.exe .
+          GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o dist/cctui-windows-arm64.exe .
+
+      - name: Package binaries
+        run: |
+          cd dist
+          tar -czf cctui-linux-amd64.tar.gz cctui-linux-amd64
+          tar -czf cctui-linux-arm64.tar.gz cctui-linux-arm64
+          tar -czf cctui-darwin-amd64.tar.gz cctui-darwin-amd64
+          tar -czf cctui-darwin-arm64.tar.gz cctui-darwin-arm64
+          zip cctui-windows-amd64.zip cctui-windows-amd64.exe
+          zip cctui-windows-arm64.zip cctui-windows-arm64.exe
+          rm cctui-linux-amd64 cctui-linux-arm64 cctui-darwin-amd64 cctui-darwin-arm64 cctui-windows-amd64.exe cctui-windows-arm64.exe
+
+      - name: Create or Update Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag_name }}
+        run: |
+          gh release create "$TAG" dist/* --title "$TAG" --notes "Manual release build for version $TAG" || gh release upload "$TAG" dist/* --clobber
